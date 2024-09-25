@@ -1,6 +1,7 @@
 import socket
 import select
 import datetime
+import re
 
 class Channel:
     def __init__(self, name):
@@ -82,6 +83,7 @@ class Server:
                 client.buffer += data
                 while "\r\n" in client.buffer:
                     line, client.buffer = client.buffer.split("\r\n", 1)
+                    print(f"[{client.address[0]}:{client.address[1]}] → b'{line}\r\n'")
                     self.handle_command(client, line.strip())
         except Exception as e:
             print("Error handling client", client.address, ":", e)
@@ -95,7 +97,6 @@ class Server:
         print("Client", client.address, "disconnected")
     
     def handle_command(self, client, data):
-        print(data)
         parts = data.split()
         if not parts:
             return
@@ -106,16 +107,14 @@ class Server:
         else:
             client.send_message("421 * " + command + " :Unknown command")
 
-
     def handle_nick(self, client, parts):
-        bannedChars = "!\"#$%&\'()*+,./:;<=>?@[\\]^_`{|}~ "
         if len(parts) < 2:
             client.send_message("461 * NICK :Not enough parameters")
         else:
-            new_nick = parts[1]
-            if any(c in bannedChars for c in new_nick):
-                client.send_message(f"432 {new_nick} :Erronous nickname")
-                print("Error, nickanme cannot contain special chars")
+            new_nick = parts[1].strip()
+            if not re.match(r'^[a-zA-Z][a-zA-Z0-9\-_]*$', new_nick):
+                client.send_message(f"432 * {new_nick} :Erroneous nickname")
+                client.send_message("NOTICE * :Nickname must start with a letter and can contain only letters, numbers, hyphens, and underscores")
                 return
 
             for c in self.clients.values():
@@ -190,9 +189,6 @@ class Server:
             client.send_message("461 * PING :Not enough parameters")
         else:
             client.send_message(": PONG :" + parts[1])
-
-    
-
 
 def main():
     SERVER = "::1"
