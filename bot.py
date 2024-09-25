@@ -2,6 +2,7 @@ import socket
 import random
 import time
 import argparse
+import json
 
 # Parse command line arguments
 parser = argparse.ArgumentParser(description="IRC Bot")
@@ -117,10 +118,27 @@ def get_bal(user):
         balances[user] = 1000
     return balances[user]
 
+def save_info(balances):
+    with open("bal.txt", "w") as file:
+        json.dump(balances, file)
+
 def update_bal(user, amount):
     if user not in balances:
         balances[user] = 1000
     balances[user] += amount
+    save_info(balances)
+
+
+
+def load_info():
+    global balances
+    try:
+        with open ("bal.txt", "r") as file:
+            balances = json.load(file)
+    except FileNotFoundError:
+        balances = {}
+
+load_info()
 
 while True:
     try:
