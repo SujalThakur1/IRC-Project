@@ -1,5 +1,6 @@
 import socket
 import select
+import datetime
 
 class Channel:
     def __init__(self, name):
@@ -43,6 +44,15 @@ class Server:
         self.socket = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
         self.clients = {}
         self.channels = {}
+
+        self.command_handlers = {
+            "NICK": self.handle_nick,
+            "USER": self.handle_user,
+            "JOIN": self.handle_join,
+            "PRIVMSG": self.handle_privmsg,
+            "QUIT": self.handle_quit,
+            "PING": self.handle_ping
+        }
 
     def start(self):
         self.socket.bind((self.host, self.port, 0, 0))
@@ -91,30 +101,31 @@ class Server:
             return
         command = parts[0].upper()
 
-        if command == "NICK":
-            self.handle_nick(client, parts)
-        elif command == "USER":
-            self.handle_user(client, parts)
-        elif command == "JOIN":
-            self.handle_join(client, parts)
-        elif command == "PRIVMSG":
-            self.handle_privmsg(client, parts)
-        elif command == "QUIT":
-            self.handle_quit(client, parts)
-        elif command == "PING":
-            self.handle_ping(client, parts)
+        if command in self.command_handlers:
+            self.command_handlers[command](client, parts)
         else:
-            print("Client", client.nickname, "typed:", data)
+            client.send_message("421 * " + command + " :Unknown command")
+
 
     def handle_nick(self, client, parts):
+        bannedChars = "!\"#$%&\'()*+,./:;<=>?@[\\]^_`{|}~ "
         if len(parts) < 2:
             client.send_message("461 * NICK :Not enough parameters")
         else:
             new_nick = parts[1]
+            if any(c in bannedChars for c in new_nick):
+                client.send_message(f"432 {new_nick} :Erronous nickname")
+                print("Error, nickanme cannot contain special chars")
+                return
+
             for c in self.clients.values():
                 if c.nickname == new_nick:
                     client.send_message("433 * " + new_nick + " :Nickname is already in use")
                     return
+                
+            if client.nickname:
+                for channel in client.channels:
+                    channel.broadcast(":" + client.nickname + "!" + client.nickname + "@" + client.address[0] + " NICK :" + new_nick)
             client.nickname = new_nick
 
     def handle_user(self, client, parts):
@@ -123,6 +134,12 @@ class Server:
         else:
             client.send_message(": 001 " + client.nickname + " :Welcome to the IRC Network")
             client.send_message(": 422 " + client.nickname + " :MOTD File is missing")
+
+    def handle_log(self, status, nick, time):
+        logMsg = f"User {nick} {status} at {time}\n"
+        print(logMsg)
+        with open("log.txt", "a") as log:
+            log.write(logMsg)
 
     def handle_join(self, client, parts):
         if len(parts) < 2:
@@ -135,6 +152,8 @@ class Server:
             client.join_channel(channel)
             channel.broadcast(":" + client.nickname + "!" + client.nickname + "@" + client.address[0] + " JOIN " + channel_name)
             client.send_message(": 353 " + client.nickname + " = " + channel_name + " :" + " ".join([c.nickname for c in channel.clients]))
+            time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            self.handle_log("connected", client.nickname, time)
 
     def handle_privmsg(self, client, parts):
         if len(parts) < 3:
@@ -157,6 +176,8 @@ class Server:
 
     def handle_quit(self, client, parts):
         quit_message = "Client quit"
+        time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.handle_log("disconnected", client.nickname,time)
         if len(parts) > 1:
             quit_message = " ".join(parts[1:])[1:]
         for channel in list(client.channels):
@@ -169,6 +190,9 @@ class Server:
             client.send_message("461 * PING :Not enough parameters")
         else:
             client.send_message(": PONG :" + parts[1])
+
+    
+
 
 def main():
     SERVER = "::1"
