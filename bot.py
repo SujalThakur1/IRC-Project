@@ -28,7 +28,6 @@ irc.send(f"JOIN {CHANNEL}\r\n".encode())
 users = set()
 balances = {}
 
-# Fun facts
 facts = [
     "Flamingos can drink boiling water.",
     "Cows moo with regional accents.",
@@ -133,120 +132,172 @@ def update_bal(user, amount):
 def load_info():
     global balances
     try:
+        # Load balances from file
         with open ("bal.txt", "r") as file:
             balances = json.load(file)
     except FileNotFoundError:
         balances = {}
 
-load_info()
+def handle_ping():
+    irc.send(f"PONG {resp.split()[1]}\r\n".encode())
 
-while True:
-    try:
-        resp = irc.recv(2048).decode("utf-8", errors="ignore").strip("\r\n")
-        print(resp)
+def proccess_user_list():
+    # Parse the user list
+    user_list = line.split(':')[-1].strip().split()
+    for user in user_list:
+        users.add(user)
 
-        if resp.startswith("PING"):
-            irc.send(f"PONG {resp.split()[1]}\r\n".encode())
+def handle_user_join():
+    # Get the user that joined
+    user = line.split('!')[0][1:]
+    users.add(user)
 
-        lines = resp.splitlines()
+def handle_user_leave():
+    # Get the user that left
+    user = line.split('!')[0][1:]
+    if user in users:
+        users.remove(user)
 
-        for line in lines:
-            if "353" in line and CHANNEL in line:
-                user_list = line.split(':')[-1].strip().split()
-                for user in user_list:
-                    users.add(user)
-            elif "JOIN" in line:
-                user = line.split('!')[0][1:]
-                users.add(user)
-            elif "PART" in line or "QUIT" in line:
-                user = line.split('!')[0][1:]
-                if user in users:
-                    users.remove(user)
+def proccess_privmsg(resp):
+    # Parse the message
+    parts = resp.split(' ', 3)
+    # Get the user, target, and message
+    user = parts[0].split('!')[0][1:]
+    target = parts[2]
+    msg = parts[3][1:]
 
-        if "PRIVMSG" in resp:
-            parts = resp.split(' ', 3)
-            user = parts[0].split('!')[0][1:]
-            target = parts[2]
-            msg = parts[3][1:]
+    if target == NICK:
+        fact = random.choice(facts)
+        irc.send(f"PRIVMSG {user} :{fact}\r\n".encode())
+    elif msg == "!":
+        cmds = show_commands()
+        for cmd in cmds.split('\n'):
+            irc.send(f"PRIVMSG {CHANNEL} :{cmd}\r\n".encode())
+    elif msg == "!hello":
+        irc.send(f"PRIVMSG {CHANNEL} :Hello {user}!\r\n".encode())
+    elif msg.startswith("!slap"):
+        handle_slap(user, msg)
+    elif msg.startswith("!roulette"):
+        handle_roulette(user, msg)
+    elif msg == "!work":
+        handle_work(user)
+    elif msg == "!bal":
+        handle_bal(user)
 
-            if target == NICK:
-                fact = random.choice(facts)
-                irc.send(f"PRIVMSG {user} :{fact}\r\n".encode())
+def handle_slap(user, msg):
+    parts = msg.split()
+    if len(parts) == 2:
+        victim = parts[1]
+        if victim != NICK and victim in users:
+            irc.send(f"PRIVMSG {CHANNEL} :*slaps {victim} with a trout*\r\n".encode())
+        elif victim == NICK:
+            irc.send(f"PRIVMSG {CHANNEL} :*slaps {user} back with a tuna* Take that!\r\n".encode())
+        else:
+            irc.send(f"PRIVMSG {CHANNEL} :Can't slap {victim}, they're not here.\r\n".encode())
+    else:
+        victims = list(users)
+        victims.remove(NICK)
+        victims.remove(user)
+        if len(victims) > 0:
+            victim = random.choice(victims)
+            irc.send(f"PRIVMSG {CHANNEL} :*slaps {victim} with a trout*\r\n".encode())
+        else:
+            irc.send(f"PRIVMSG {CHANNEL} :No one to slap :(\r\n".encode())
 
-            elif msg == "!":
-                cmds = show_commands()
-                for cmd in cmds.split('\n'):
-                    irc.send(f"PRIVMSG {CHANNEL} :{cmd}\r\n".encode())
-
-            elif msg == "!hello":
-                irc.send(f"PRIVMSG {CHANNEL} :Hello {user}!\r\n".encode())
-
-            elif msg.startswith("!slap"):
-                parts = msg.split()
-                if len(parts) == 2:
-                    victim = parts[1]
-                    if victim != NICK and victim in users:
-                        irc.send(f"PRIVMSG {CHANNEL} :*slaps {victim} with a trout*\r\n".encode())
-                    elif victim == NICK:
-                        irc.send(f"PRIVMSG {CHANNEL} :*slaps {user} back with a tuna* Take that!\r\n".encode())
-                    else:
-                        irc.send(f"PRIVMSG {CHANNEL} :Can't slap {victim}, they're not here.\r\n".encode())
-                else:
-                    victims = list(users)
-                    victims.remove(NICK)
-                    victims.remove(user)
-                    if len(victims) > 0:
-                        victim = random.choice(victims)
-                        irc.send(f"PRIVMSG {CHANNEL} :*slaps {victim} with a trout*\r\n".encode())
-                    else:
-                        irc.send(f"PRIVMSG {CHANNEL} :No one to slap :(\r\n".encode())
-
-            elif msg.startswith("!roulette"):
-                parts = msg.split()
-                if len(parts) == 3:
-                    amt_str = parts[1]
-                    bet = parts[2]
+def handle_roulette(user, msg):
+    parts = msg.split()
+    if len(parts) == 3:
+        amt_str = parts[1]
+        bet = parts[2]
                     
-                    if amt_str.isdigit() and int(amt_str) > 0:
-                        amt = int(amt_str)
-                        bal = get_bal(user)
+        if amt_str.isdigit() and int(amt_str) > 0:
+            amt = int(amt_str)
+            bal = get_bal(user)
                         
-                        if amt > bal:
-                            irc.send(f"PRIVMSG {CHANNEL} :Sorry {user}, you only have ${bal}. Can't bet ${amt}.\r\n".encode())
-                        else:
-                            irc.send(f"PRIVMSG {CHANNEL} :Spinning the wheel...\r\n".encode())
-                            time.sleep(4)
-                            result, color, win, winnings = play_roulette(amt, bet)
-                            irc.send(f"PRIVMSG {CHANNEL} :It's {result} {color}!\r\n".encode())
+            if amt > bal:
+                irc.send(f"PRIVMSG {CHANNEL} :Sorry {user}, you only have ${bal}. Can't bet ${amt}.\r\n".encode())
+            else:
+                irc.send(f"PRIVMSG {CHANNEL} :Spinning the wheel...\r\n".encode())
+                time.sleep(4)
+                result, color, win, winnings = play_roulette(amt, bet)
+                irc.send(f"PRIVMSG {CHANNEL} :It's {result} {color}!\r\n".encode())
                             
-                            if win:
-                                update_bal(user, winnings - amt)
-                                irc.send(f"PRIVMSG {CHANNEL} :Congrats {user}! You won ${winnings}!\r\n".encode())
-                            else:
-                                update_bal(user, -amt)
-                                irc.send(f"PRIVMSG {CHANNEL} :Tough luck {user}. You lost ${amt}.\r\n".encode())
-                            
-                            new_bal = get_bal(user)
-                            irc.send(f"PRIVMSG {CHANNEL} :{user}, your balance: ${new_bal}.\r\n".encode())
-                    else:
-                        irc.send(f"PRIVMSG {CHANNEL} :Invalid bet. Use a positive number.\r\n".encode())
+                if win:
+                    update_bal(user, winnings - amt)
+                    irc.send(f"PRIVMSG {CHANNEL} :Congrats {user}! You won ${winnings}!\r\n".encode())
                 else:
-                    irc.send(f"PRIVMSG {CHANNEL} :Wrong format. Use: !roulette <amount> <bet>\r\n".encode())
-                    irc.send(f"PRIVMSG {CHANNEL} :Bets: red/black, odd/even, 1-12/13-24/25-36, 1-18/19-36, or 0-36\r\n".encode())
+                    update_bal(user, -amt)
+                    irc.send(f"PRIVMSG {CHANNEL} :Tough luck {user}. You lost ${amt}.\r\n".encode())
+                            
+                    new_bal = get_bal(user)
+                    irc.send(f"PRIVMSG {CHANNEL} :{user}, your balance: ${new_bal}.\r\n".encode())
+        else:
+            irc.send(f"PRIVMSG {CHANNEL} :Invalid bet. Use a positive number.\r\n".encode())
+    else:
+        irc.send(f"PRIVMSG {CHANNEL} :Wrong format. Use: !roulette <amount> <bet>\r\n".encode())
+        irc.send(f"PRIVMSG {CHANNEL} :Bets: red/black, odd/even, 1-12/13-24/25-36, 1-18/19-36, or 0-36\r\n".encode())
 
-            elif msg == "!work":
-                pay = random.randint(100, 900)
-                update_bal(user, pay)
-                irc.send(f"PRIVMSG {CHANNEL} :{user} worked hard and got ${pay}!\r\n".encode())
-                new_bal = get_bal(user)
-                irc.send(f"PRIVMSG {CHANNEL} :Your balance: ${new_bal}.\r\n".encode())
+def handle_work(user):
+    # Pay the user for working
+    pay = random.randint(100, 900)
+    update_bal(user, pay)
+    new_bal = get_bal(user)
+    irc.send(f"PRIVMSG {CHANNEL} :{user}, worked hard and got ${pay}!\r\n".encode())
+    irc.send(f"PRIVMSG {CHANNEL} :{user}, Your balance: ${new_bal}.\r\n".encode())
 
-            elif msg == "!bal":
-                bal = get_bal(user)
-                irc.send(f"PRIVMSG {CHANNEL} :{user}, you have ${bal}.\r\n".encode())
+def handle_bal(user):
+    bal = get_bal(user)
+    irc.send(f"PRIVMSG {CHANNEL} :{user}, Your balance: ${bal}.\r\n".encode())
+
+
+
+
+
+def main():
+    load_info()
+
+    try:
+        while True:
+            try:
+                resp = irc.recv(2048).decode("utf-8", errors="ignore").strip("\r\n")
+                if not resp:
+                    print("Connection closed by the server.")
+                    break
+
+                print(resp)
+
+                if resp.startswith("PING"):
+                    handle_ping()
+
+                lines = resp.splitlines()
+
+                for line in lines:
+                    if "353" in line and CHANNEL in line:
+                        user_list = line.split(':')[-1].strip().split()
+                        for user in user_list:
+                            users.add(user)
+                    elif "JOIN" in line:
+                        user = line.split('!')[0][1:]
+                        users.add(user)
+                    elif "PART" in line or "QUIT" in line:
+                        user = line.split('!')[0][1:]
+                        if user in users:
+                            users.remove(user)
+
+                if "PRIVMSG" in resp:
+                    proccess_privmsg(resp)
+
+            except socket.error as e:
+                print(f"Socket error occurred: {e}")
+                break
+            except Exception as e:
+                print(f"An error occurred: {e}")
+                break
     except KeyboardInterrupt:
         print("Bot is shutting down...")
-        break
-    except Exception as e:
-        print(f"An error occurred: {e}")
-        continue
+    finally:
+        irc.close()  # Ensuring the socket is closed when exiting
+        print("Connection closed.")
+
+if __name__ == "__main__":
+    main()
