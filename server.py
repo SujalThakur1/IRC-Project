@@ -1,6 +1,7 @@
 import socket
 import select
 import datetime
+import re
 
 class Channel:
     def __init__(self, name):
@@ -50,10 +51,11 @@ class Server:
             "USER": self.handle_user,
             "JOIN": self.handle_join,
             "PRIVMSG": self.handle_privmsg,
+            "CAP" : self.handle_cap,
             "QUIT": self.handle_quit,
             "PING": self.handle_ping
         }
-
+    
     def start(self):
         self.socket.bind((self.host, self.port, 0, 0))
         self.socket.listen(5)
@@ -73,6 +75,9 @@ class Server:
             except Exception as e:
                 print("Error:", e)
 
+    def message_sent(self, client):
+        print(f"[{client.address[0]}:{client.address[1]}: → Message sent to client\r\n")
+
     def handle_client(self, client):
         try:
             data = client.socket.recv(2048).decode("utf-8", errors="ignore")
@@ -82,10 +87,12 @@ class Server:
                 client.buffer += data
                 while "\r\n" in client.buffer:
                     line, client.buffer = client.buffer.split("\r\n", 1)
+                    print(f"[{client.address[0]}:{client.address[1]}] → b'{line}\r\n'")
                     self.handle_command(client, line.strip())
         except Exception as e:
             print("Error handling client", client.address, ":", e)
             self.remove_client(client)
+
 
     def remove_client(self, client):
         for channel in list(client.channels):
@@ -95,7 +102,6 @@ class Server:
         print("Client", client.address, "disconnected")
     
     def handle_command(self, client, data):
-        print(data)
         parts = data.split()
         if not parts:
             return
@@ -105,38 +111,47 @@ class Server:
             self.command_handlers[command](client, parts)
         else:
             client.send_message("421 * " + command + " :Unknown command")
+            print(f"[{client.address[0]}:{client.address[1]}] → Error 421: Unkown command\r\n")
 
+    def handle_cap(self, client, parts):
+        print(f"[{client.address[0]}:{client.address[1]}] CAP: {parts[1]} {parts[2]}")
 
+    
     def handle_nick(self, client, parts):
-        bannedChars = "!\"#$%&\'()*+,./:;<=>?@[\\]^_`{|}~ "
         if len(parts) < 2:
             client.send_message("461 * NICK :Not enough parameters")
+            print(f"[{client.address[0]}:{client.address[1]}] → Error 461: Not enough parameters")
         else:
-            new_nick = parts[1]
-            if any(c in bannedChars for c in new_nick):
-                client.send_message(f"432 {new_nick} :Erronous nickname")
-                print("Error, nickanme cannot contain special chars")
+            new_nick = parts[1].strip()
+            if not re.match(r'^[a-zA-Z][a-zA-Z0-9\-_]*$', new_nick):
+                client.send_message(f"432 * {new_nick} :Erroneous nickname")
+                client.send_message("NOTICE * :Nickname must start with a letter and can contain only letters, numbers, hyphens, and underscores")
+                print(f"[{client.address[0]}:{client.address[1]}] → Error 432: Erronous Nickname")
                 return
 
             for c in self.clients.values():
                 if c.nickname == new_nick:
                     client.send_message("433 * " + new_nick + " :Nickname is already in use")
+                    print(f"[{client.address[0]}:{client.address[1]}] → Error 433: Nickname already in use")
                     return
                 
             if client.nickname:
                 for channel in client.channels:
                     channel.broadcast(":" + client.nickname + "!" + client.nickname + "@" + client.address[0] + " NICK :" + new_nick)
             client.nickname = new_nick
-
+    
     def handle_user(self, client, parts):
         if len(parts) < 5:
             client.send_message("461 * USER :Not enough parameters")
+            print(f"[{client.address[0]}:{client.address[1]}] → Error 461: No enough param")
         else:
             client.send_message(": 001 " + client.nickname + " :Welcome to the IRC Network")
+            print(f"[{client.address[0]}:{client.address[1]}] → 001 :Welcome to the IRC Network")
             client.send_message(": 422 " + client.nickname + " :MOTD File is missing")
+            print(f"[{client.address[0]}:{client.address[1]}] → 422 :MOTD file is missing")
 
-    def handle_log(self, status, nick, time):
-        logMsg = f"User {nick} {status} at {time}\n"
+    def handle_log(self, status, nick, time, client):
+        logMsg = f"[{client.address[0]}:{client.address[1]}] ← User {nick} {status} at {time}\n"
         print(logMsg)
         with open("log.txt", "a") as log:
             log.write(logMsg)
@@ -144,6 +159,7 @@ class Server:
     def handle_join(self, client, parts):
         if len(parts) < 2:
             client.send_message(": 461 * JOIN :Not enough parameters")
+            print(f"[{client.address[0]}:{client.address[1]}] → Error 461 Not enough param")
         else:
             channel_name = parts[1]
             if channel_name not in self.channels:
@@ -152,12 +168,14 @@ class Server:
             client.join_channel(channel)
             channel.broadcast(":" + client.nickname + "!" + client.nickname + "@" + client.address[0] + " JOIN " + channel_name)
             client.send_message(": 353 " + client.nickname + " = " + channel_name + " :" + " ".join([c.nickname for c in channel.clients]))
+            print(f"{client.address[0]}:{client.address[1]}] → : 353 {client.nickname} : {channel_name}")
             time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            self.handle_log("connected", client.nickname, time)
+            self.handle_log("connected", client.nickname, time, client)
 
     def handle_privmsg(self, client, parts):
         if len(parts) < 3:
             client.send_message(": 461 * PRIVMSG :Not enough parameters")
+            print(f"[{client.address[0]}:{client.address[1]}] → Error 461 Not enough param")
         else:
             target = parts[1]
             message = " ".join(parts[2:])[1:]
@@ -173,11 +191,12 @@ class Server:
                         break
                 if target_client:
                     target_client.send_message(":" + client.nickname + "!" + client.nickname + "@" + client.address[0] + " PRIVMSG " + target + " :" + message)
+                    print(f"[{client.address[0]}:{client.address[1]}]→ : {client.nickname} sending {message} to {target}")
 
     def handle_quit(self, client, parts):
         quit_message = "Client quit"
         time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        self.handle_log("disconnected", client.nickname,time)
+        self.handle_log("disconnected", client.nickname,time, client.address)
         if len(parts) > 1:
             quit_message = " ".join(parts[1:])[1:]
         for channel in list(client.channels):
@@ -188,11 +207,11 @@ class Server:
     def handle_ping(self, client, parts):
         if len(parts) < 2:
             client.send_message("461 * PING :Not enough parameters")
+            print(f"[{client.address[0]}:{client.address[1]}] Error 461 Not enough param")
+
         else:
             client.send_message(": PONG :" + parts[1])
-
-    
-
+            print(f"[{client.address[0]}:{client.address[1]}] recieved PING replying with PONG {parts[1]}")
 
 def main():
     SERVER = "::1"
