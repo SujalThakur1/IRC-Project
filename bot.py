@@ -76,7 +76,8 @@ def play_roulette(amount, bet):
     
     win = False
     winnings = 0
-    
+
+    # Checks win contition
     if bet == 'red' or bet == 'black':
         if bet == color:
             win = True
