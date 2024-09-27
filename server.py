@@ -3,21 +3,17 @@ import select
 import datetime
 import re
 
-# Class that represents chat channels
 class Channel:
     def __init__(self, name):
         self.name = name
         self.clients = set()
 
-    # Adds client to channel
     def add_client(self, client):
         self.clients.add(client)
 
-    # Removes client from channel
     def remove_client(self, client):
         self.clients.remove(client)
-        
-    # Function that handles delivering message to clients in the same channel
+
     def broadcast(self, message, sender=None):
         for client in self.clients:
             if client != sender:
@@ -36,12 +32,10 @@ class Client:
     def send_message(self, message):
         self.socket.send((message + "\r\n").encode('utf-8'))
 
-    # Handles client joining a channel in the server
     def join_channel(self, channel):
         self.channels.add(channel)
         channel.add_client(self)
 
-     # Handles client leaving a channel in the server
     def leave_channel(self, channel):
         self.channels.remove(channel)
         channel.remove_client(self)
@@ -142,7 +136,7 @@ class Server:
             if client.nickname:
                 for channel in client.channels:
                     # Notify other clients in the channel (we need to broadcast so that HexChat updates the nick)
-                    channel.broadcast(":" + client.nickname + "!" + client.nickname + "@" + client.address[0] + " NICK :" + new_nick)
+                    channel.broadcast(":IRCserver" + client.nickname + "!" + client.nickname + "@" + client.address[0] + " NICK :" + new_nick)
             client.nickname = new_nick
 
     # Handle USER command
@@ -150,9 +144,9 @@ class Server:
         if len(parts) < 5:
             client.send_message("461 * USER :Not enough parameters")
         else:
-            client.send_message(": 001 " + client.nickname + " :Welcome to the IRC Network")
+            client.send_message(":IRCserver 001 " + client.nickname + " :Welcome to the IRC Network")
             # MOTD File is missing means there is no message to display
-            client.send_message(": 422 " + client.nickname + " :MOTD File is missing")
+            client.send_message(":IRCserver 422 " + client.nickname + " :MOTD File is missing")
 
     # Log the user's status
     def handle_log(self, status, nick, time):
@@ -165,7 +159,7 @@ class Server:
     # Handle JOIN command
     def handle_join(self, client, parts):
         if len(parts) < 2:
-            client.send_message(": 461 * JOIN :Not enough parameters")
+            client.send_message(":IRCserver 461 * JOIN :Not enough parameters")
         else:
             channel_name = parts[1]
             if channel_name not in self.channels:
@@ -175,14 +169,14 @@ class Server:
             # Notify other clients in the channel
             channel.broadcast(":" + client.nickname + "!" + client.nickname + "@" + client.address[0] + " JOIN " + channel_name)
             # Send the client the list of users in the channel
-            client.send_message(": 353 " + client.nickname + " = " + channel_name + " :" + " ".join([c.nickname for c in channel.clients]))
+            client.send_message(":IRCserver 353 " + client.nickname + " = " + channel_name + " :" + " ".join([c.nickname for c in channel.clients]))
             time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             self.handle_log("connected", client.nickname, time)
 
     # Handle PRIVMSG command
     def handle_privmsg(self, client, parts):
         if len(parts) < 3:
-            client.send_message(": 461 * PRIVMSG :Not enough parameters")
+            client.send_message(":IRCserver 461 * PRIVMSG :Not enough parameters")
         else:
             target = parts[1]
             message = " ".join(parts[2:])[1:]
