@@ -20,6 +20,7 @@ class Channel:
                 client.send_message(message)
 
 class Client:
+    # Initialize the client
     def __init__(self, socket, address):
         self.socket = socket
         self.address = address
@@ -27,6 +28,7 @@ class Client:
         self.channels = set()
         self.buffer = ""
 
+    # Send a message to the client
     def send_message(self, message):
         self.socket.send((message + "\r\n").encode('utf-8'))
 
@@ -39,6 +41,7 @@ class Client:
         channel.remove_client(self)
 
 class Server:
+    # Initialize the server
     def __init__(self, host, port):
         self.host = host
         self.port = port
@@ -55,6 +58,7 @@ class Server:
             "PING": self.handle_ping
         }
 
+    # Start the server
     def start(self):
         self.socket.bind((self.host, self.port, 0, 0))
         self.socket.listen(5)
@@ -62,6 +66,8 @@ class Server:
         
         while True:
             try:
+                # Use select to monitor the socket 
+                # Timeout is set to 1 second to regularly check for new clients
                 readable, _, _ = select.select([self.socket] + list(self.clients.keys()), [], [], 1)
                 for sock in readable:
                     if sock == self.socket:
@@ -74,6 +80,7 @@ class Server:
             except Exception as e:
                 print("Error:", e)
 
+    # Handle the client
     def handle_client(self, client):
         try:
             data = client.socket.recv(2048).decode("utf-8", errors="ignore")
@@ -89,6 +96,7 @@ class Server:
             print("Error handling client", client.address, ":", e)
             self.remove_client(client)
 
+    # Remove the client from the server
     def remove_client(self, client):
         for channel in list(client.channels):
             client.leave_channel(channel)
@@ -96,6 +104,7 @@ class Server:
         client.socket.close()
         print("Client", client.address, "disconnected")
     
+    # Handle the command
     def handle_command(self, client, data):
         parts = data.split()
         if not parts:
@@ -107,11 +116,13 @@ class Server:
         else:
             client.send_message("421 * " + command + " :Unknown command")
 
+    # Handle NICK command
     def handle_nick(self, client, parts):
         if len(parts) < 2:
             client.send_message("461 * NICK :Not enough parameters")
         else:
             new_nick = parts[1].strip()
+            # Check if the nickname is valid
             if not re.match(r'^[a-zA-Z][a-zA-Z0-9\-_]*$', new_nick):
                 client.send_message(f"432 * {new_nick} :Erroneous nickname")
                 client.send_message("NOTICE * :Nickname must start with a letter and can contain only letters, numbers, hyphens, and underscores")
@@ -124,22 +135,28 @@ class Server:
                 
             if client.nickname:
                 for channel in client.channels:
+                    # Notify other clients in the channel (we need to broadcast so that HexChat updates the nick)
                     channel.broadcast(":" + client.nickname + "!" + client.nickname + "@" + client.address[0] + " NICK :" + new_nick)
             client.nickname = new_nick
 
+    # Handle USER command
     def handle_user(self, client, parts):
         if len(parts) < 5:
             client.send_message("461 * USER :Not enough parameters")
         else:
             client.send_message(": 001 " + client.nickname + " :Welcome to the IRC Network")
+            # MOTD File is missing means there is no message to display
             client.send_message(": 422 " + client.nickname + " :MOTD File is missing")
 
+    # Log the user's status
     def handle_log(self, status, nick, time):
         logMsg = f"User {nick} {status} at {time}\n"
         print(logMsg)
+        # Write the log message to a file
         with open("log.txt", "a") as log:
             log.write(logMsg)
 
+    # Handle JOIN command
     def handle_join(self, client, parts):
         if len(parts) < 2:
             client.send_message(": 461 * JOIN :Not enough parameters")
@@ -149,11 +166,14 @@ class Server:
                 self.channels[channel_name] = Channel(channel_name)
             channel = self.channels[channel_name]
             client.join_channel(channel)
+            # Notify other clients in the channel
             channel.broadcast(":" + client.nickname + "!" + client.nickname + "@" + client.address[0] + " JOIN " + channel_name)
+            # Send the client the list of users in the channel
             client.send_message(": 353 " + client.nickname + " = " + channel_name + " :" + " ".join([c.nickname for c in channel.clients]))
             time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             self.handle_log("connected", client.nickname, time)
 
+    # Handle PRIVMSG command
     def handle_privmsg(self, client, parts):
         if len(parts) < 3:
             client.send_message(": 461 * PRIVMSG :Not enough parameters")
@@ -173,6 +193,7 @@ class Server:
                 if target_client:
                     target_client.send_message(":" + client.nickname + "!" + client.nickname + "@" + client.address[0] + " PRIVMSG " + target + " :" + message)
 
+    # Handle QUIT command
     def handle_quit(self, client, parts):
         quit_message = "Client quit"
         time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -184,6 +205,7 @@ class Server:
             client.leave_channel(channel)
         self.remove_client(client)
 
+    # Handle PING command
     def handle_ping(self, client, parts):
         if len(parts) < 2:
             client.send_message("461 * PING :Not enough parameters")
