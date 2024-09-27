@@ -3,17 +3,21 @@ import select
 import datetime
 import re
 
+# Class that represents chat channels
 class Channel:
     def __init__(self, name):
         self.name = name
         self.clients = set()
 
+    # Adds client to channel
     def add_client(self, client):
         self.clients.add(client)
 
+    # Removes client from channel
     def remove_client(self, client):
         self.clients.remove(client)
-
+        
+    # Function that handles delivering message to clients in the same channel
     def broadcast(self, message, sender=None):
         for client in self.clients:
             if client != sender:
@@ -32,10 +36,12 @@ class Client:
     def send_message(self, message):
         self.socket.send((message + "\r\n").encode('utf-8'))
 
+    # Handles client joining a channel in the server
     def join_channel(self, channel):
         self.channels.add(channel)
         channel.add_client(self)
 
+     # Handles client leaving a channel in the server
     def leave_channel(self, channel):
         self.channels.remove(channel)
         channel.remove_client(self)
