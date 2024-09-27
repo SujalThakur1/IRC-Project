@@ -6,6 +6,8 @@ import json
 
 # Parse command line arguments
 parser = argparse.ArgumentParser(description="IRC Bot")
+
+# --host,--port, --name, --channel arguments are added to the parser with proper default values and descriptions
 parser.add_argument("--host", default="::", help="Server to connect to")
 parser.add_argument("--port", type=int, default=6667, help="Port to connect to")
 parser.add_argument("--name", default="CoolBot", help="Nickname for the bot")
@@ -13,6 +15,7 @@ parser.add_argument("--channel", default="#test", help="Channel to join")
 args = parser.parse_args()
 
 # Bot config
+# Declaring constant variables and initialising them for the bot
 SERVER = args.host
 PORT = args.port
 CHANNEL = args.channel
@@ -28,6 +31,7 @@ irc.send(f"JOIN {CHANNEL}\r\n".encode())
 users = set()
 balances = {}
 
+# An array of fun facts 
 facts = [
     "Flamingos can drink boiling water.",
     "Cows moo with regional accents.",
@@ -46,9 +50,11 @@ facts = [
 numbers = list(range(37))
 colors = ['green'] + ['red', 'black'] * 18
 
+#function that checks if a number is odd or not
 def is_odd(n):
     return n % 2 != 0
 
+# Function that checks if a number is within first, second or third dozen.
 def get_dozen(n):
     if n >= 1 and n <= 12:
         return "1-12"
@@ -58,7 +64,7 @@ def get_dozen(n):
         return "25-36"
     else:
         return None
-
+# Checks if the number is in range of 1-18 or 19-36
 def get_range(n):
     if n >= 1 and n <= 18:
         return "1-18"
@@ -67,7 +73,9 @@ def get_range(n):
     else:
         return None
 
+#Funtion that handles the calculations of roulette gameplay. Returns the result of roulette, the color picked by roulette, win/lose and the money earned from roulette
 def play_roulette(amount, bet):
+    #Initialise roulette
     result = random.choice(numbers)
     color = colors[result]
     is_result_odd = is_odd(result)
@@ -77,7 +85,7 @@ def play_roulette(amount, bet):
     win = False
     winnings = 0
 
-    # Checks win contition
+    # Checks win contition and calculates winnings
     if bet == 'red' or bet == 'black':
         if bet == color:
             win = True
@@ -101,6 +109,7 @@ def play_roulette(amount, bet):
     
     return result, color, win, winnings
 
+# Shows available commands and their descriptions
 def show_commands():
     cmds = [
         "Commands:",
@@ -113,15 +122,18 @@ def show_commands():
     ]
     return "\n".join(cmds)
 
+# Gets user balance. Related to roulette game
 def get_bal(user):
     if user not in balances:
         balances[user] = 1000
     return balances[user]
 
+# Saves the balance of user to bal.txt
 def save_info(balances):
     with open("bal.txt", "w") as file:
         json.dump(balances, file)
 
+#Updates the user balance
 def update_bal(user, amount):
     if user not in balances:
         balances[user] = 1000
@@ -129,7 +141,7 @@ def update_bal(user, amount):
     save_info(balances)
 
 
-
+# Loads the user balance from bal.txt to server
 def load_info():
     global balances
     try:
@@ -139,6 +151,7 @@ def load_info():
     except FileNotFoundError:
         balances = {}
 
+# Handles !ping command
 def handle_ping():
     irc.send(f"PONG {resp.split()[1]}\r\n".encode())
 
@@ -159,6 +172,7 @@ def handle_user_leave():
     if user in users:
         users.remove(user)
 
+# Function that handles private messaging
 def proccess_privmsg(resp):
     # Parse the message
     parts = resp.split(' ', 3)
@@ -185,6 +199,7 @@ def proccess_privmsg(resp):
     elif msg == "!bal":
         handle_bal(user)
 
+# Handles !slap command. 
 def handle_slap(user, msg):
     parts = msg.split()
     if len(parts) == 2:
@@ -204,7 +219,7 @@ def handle_slap(user, msg):
             irc.send(f"PRIVMSG {CHANNEL} :*slaps {victim} with a trout*\r\n".encode())
         else:
             irc.send(f"PRIVMSG {CHANNEL} :No one to slap :(\r\n".encode())
-
+# Handles !roulette command. Calls play_roulette() funtion to determine the result of the game.
 def handle_roulette(user, msg):
     parts = msg.split()
     if len(parts) == 3:
@@ -238,6 +253,7 @@ def handle_roulette(user, msg):
         irc.send(f"PRIVMSG {CHANNEL} :Wrong format. Use: !roulette <amount> <bet>\r\n".encode())
         irc.send(f"PRIVMSG {CHANNEL} :Bets: red/black, odd/even, 1-12/13-24/25-36, 1-18/19-36, or 0-36\r\n".encode())
 
+# Handles !work command
 def handle_work(user):
     # Pay the user for working
     pay = random.randint(100, 900)
@@ -246,6 +262,7 @@ def handle_work(user):
     irc.send(f"PRIVMSG {CHANNEL} :{user}, worked hard and got ${pay}!\r\n".encode())
     irc.send(f"PRIVMSG {CHANNEL} :{user}, Your balance: ${new_bal}.\r\n".encode())
 
+# Handles !bal command (bal stands for balance) 
 def handle_bal(user):
     bal = get_bal(user)
     irc.send(f"PRIVMSG {CHANNEL} :{user}, Your balance: ${bal}.\r\n".encode())
