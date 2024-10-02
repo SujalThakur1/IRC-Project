@@ -4,6 +4,7 @@ import random
 import time
 import argparse
 import json
+import requests
 
 # Function to parse command-line arguments
 def parse_arguments():
@@ -44,20 +45,15 @@ users = set()
 # Dictionary to store user balances
 balances = {}
 
-# List of random facts for the bot to share
-facts = [
-    "Flamingos can drink boiling water.",
-    "Cows moo with regional accents.",
-    "The shortest war lasted 38 min.",
-    "Bananas are berries.",
-    "The moon has quakes.",
-    "Octopuses have 3 hearts.",
-    "A jiffy is 1/100th of a sec.",
-    "Oldest tree is 5000+ years old.",
-    "Cows have besties.",
-    "Koala prints look human-like.",
-    "Venus day > Venus year."
-]
+# Function that gets fun facts from an api
+def getFunFacts():
+    return random.choice(turnFunFactFileIntoList())
+
+def turnFunFactFileIntoList():
+    with open('./funfacts.txt') as f:
+        lines = f.read().splitlines()
+    return lines
+
 
 # Roulette game setup
 numbers = list(range(37))
@@ -198,7 +194,8 @@ def proccess_privmsg(resp, NICK, CHANNEL):
 
     # Handle different types of messages
     if target == NICK:
-        fact = random.choice(facts)
+        #fact = random.choice(facts)
+        fact=getFunFacts()
         send_data(f"PRIVMSG {user} :{fact}\r\n")
     elif msg == "!":
         cmds = show_commands()
