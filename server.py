@@ -3,7 +3,7 @@ import select
 import datetime
 import re
 from channel import Channel
-from channel import Client
+from client import Client
 
 
 
