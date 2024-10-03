@@ -3,48 +3,8 @@ import socket
 import select
 import datetime
 import re
-
-# Define Channel class to manage IRC channels
-class Channel:
-    def __init__(self, name):
-        self.name = name
-        self.clients = set()
-
-    def add_client(self, client):
-        self.clients.add(client)
-
-    def remove_client(self, client):
-        self.clients.remove(client)
-
-    # Broadcast a message to all clients in the channel except the sender
-    def broadcast(self, message, sender=None):
-        for client in self.clients:
-            if client != sender:
-                client.send_message(message)
-
-# Define Client class to manage individual IRC clients
-class Client:
-    # Initialize the client
-    def __init__(self, socket, address):
-        self.socket = socket
-        self.address = address
-        self.nickname = None
-        self.channels = set()
-        self.buffer = ""
-
-    # Send a message to the client
-    def send_message(self, message):
-        self.socket.send((message + "\r\n").encode('utf-8'))
-
-    # Join a channel
-    def join_channel(self, channel):
-        self.channels.add(channel)
-        channel.add_client(self)
-
-    # Leave a channel
-    def leave_channel(self, channel):
-        self.channels.remove(channel)
-        channel.remove_client(self)
+from channel import Channel
+from client import Client
 
 # Define Server class to manage the IRC server
 class Server:
@@ -69,27 +29,33 @@ class Server:
 
     # Start the server and listen for connections
     def start(self):
-        self.socket.bind((self.host, self.port, 0, 0))
-        self.socket.listen(5)
-        print("IRC Server running on port", self.port)
-        
-        while True:
-            try:
-                # Use select to monitor the socket 
-                # Timeout is set to 1 second to regularly check for new clients
-                readable, _, _ = select.select([self.socket] + list(self.clients.keys()), [], [], 1)
-                for sock in readable:
-                    if sock == self.socket:
-                        client_socket, address = self.socket.accept()
-                        client = Client(client_socket, address)
-                        self.clients[client_socket] = client
-                        print("New connection from", address)
-                    else:
-                        self.handle_client(self.clients[sock])
-            except Exception as e:
-                print("Error:", e)
 
-    # Handle client communication
+        try:
+            self.socket.bind((self.host, self.port, 0, 0))
+            self.socket.listen(5)
+            print("IRC Server running on port", self.port)
+            
+            while True:
+                try:
+                    # Use select to monitor the socket 
+                    # Timeout is set to 1 second to regularly check for new clients
+                    readable, _, _ = select.select([self.socket] + list(self.clients.keys()), [], [], 1)
+                    for sock in readable:
+                        if sock == self.socket:
+                            client_socket, address = self.socket.accept()
+                            client = Client(client_socket, address)
+                            self.clients[client_socket] = client
+                            print("New connection from", address)
+                        else:
+                            self.handle_client(self.clients[sock])
+                # ConnectionError is for connection-related issues
+                # BrokenPipeError is for trying to write on a socket which has been shutdown for writing
+                except(ConnectionError, BrokenPipeError):
+                    print("Error: A client has disconnected")
+        except Exception as e:
+            print("Error:", e)
+            
+    # Handle the client
     def handle_client(self, client):
         try:
             data = client.socket.recv(2048).decode("utf-8", errors="ignore")
@@ -153,7 +119,9 @@ class Server:
             # Notify other clients about the nickname change
             if client.nickname:
                 for channel in client.channels:
+
                     channel.broadcast(":" + client.nickname + "!" + client.nickname + "@" + client.address[0] + " NICK :" + new_nick)
+
             client.nickname = new_nick
 
     # Handle USER command
@@ -202,12 +170,23 @@ class Server:
             print(f"[{client.address[0]}:{client.address[1]}] → Error 461 Not enough parameters")
         else:
             target = parts[1]
-            message = " ".join(parts[2:])[1:]
+            message = " ".join(parts[2:])
+            if message.startswith(":"):
+                message = message[1:]
+
+            if not message: 
+                client.send_message(":IRCserver 412 * PRIVMSG :No text to send")
+                print(f"[{client.address[0]}:{client.address[1]}] → Error 412 No text to send")
+                return
+            
             if target.startswith("#"):
                 # Message to a channel
                 if target in self.channels:
-                    channel = self.channels[target]
-                    channel.broadcast(":" + client.nickname + "!" + client.nickname + "@" + client.address[0] + " PRIVMSG " + target + " :" + message, client)
+                    self.channels[target].broadcast(":" + client.nickname + "!" + client.nickname + "@" + client.address[0] + " PRIVMSG " + target + " :" + message)
+                else:
+                    client.send_message(":IRCserver 403 * " + target + " :No such channel")
+                    print(f"[{client.address[0]}:{client.address[1]}] → Error 403 No such channel")
+            
             else:
                 # Private message to a user
                 target_client = None
@@ -217,7 +196,10 @@ class Server:
                         break
                 if target_client:
                     target_client.send_message(":" + client.nickname + "!" + client.nickname + "@" + client.address[0] + " PRIVMSG " + target + " :" + message)
-                    print(f"[{client.address[0]}:{client.address[1]}]→ : {client.nickname} sending {message} to {target}")
+                    print(f"[{client.address[0]}:{client.address[1]}] → : {client.nickname} sending {message} to {target}")
+                else:
+                    client.send_message(":IRCserver 401 * " + target + " :No such nickname")
+                    print(f"[{client.address[0]}:{client.address[1]}] → Error 401 No such nickname")
 
     # Handle QUIT command
     def handle_quit(self, client, parts):
