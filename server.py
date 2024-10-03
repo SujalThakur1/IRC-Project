@@ -1,3 +1,4 @@
+# Import necessary modules
 import socket
 import select
 import datetime
@@ -5,8 +6,7 @@ import re
 from channel import Channel
 from client import Client
 
-
-
+# Define Server class to manage the IRC server
 class Server:
     # Initialize the server
     def __init__(self, host, port):
@@ -29,6 +29,7 @@ class Server:
 
     # Start the server and listen for connections
     def start(self):
+
         try:
             self.socket.bind((self.host, self.port, 0, 0))
             self.socket.listen(5)
@@ -118,7 +119,9 @@ class Server:
             # Notify other clients about the nickname change
             if client.nickname:
                 for channel in client.channels:
-                    channel.broadcast(":" + client.nickname + "!" + client.nickname + "@" + client.address[0] + " NICK :" + new_nick, client)
+
+                    channel.broadcast(":" + client.nickname + "!" + client.nickname + "@" + client.address[0] + " NICK :" + new_nick)
+
             client.nickname = new_nick
 
     # Handle USER command
@@ -219,11 +222,13 @@ class Server:
             client.send_message(": PONG :" + parts[1])
             print(f"[{client.address[0]}:{client.address[1]}] received PING replying with PONG {parts[1]}")
 
+# Main function to start the server
 def main():
     SERVER = "::1"
     PORT = 6667
     server = Server(SERVER, PORT)
     server.start()
 
+# Entry point of the script
 if __name__ == "__main__":
     main()
