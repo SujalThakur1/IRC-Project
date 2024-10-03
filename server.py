@@ -3,26 +3,9 @@ import socket
 import select
 import datetime
 import re
+from channel import Channel
 
 # Define Channel class to manage IRC channels
-class Channel:
-    def __init__(self, name):
-        self.name = name
-        self.clients = set()
-
-    def add_client(self, client):
-        self.clients.add(client)
-
-    def remove_client(self, client):
-        self.clients.remove(client)
-
-    # Broadcast a message to all clients in the channel except the sender
-    def broadcast(self, message, sender=None):
-        for client in self.clients:
-            if client != sender:
-                client.send_message(message)
-
-# Define Client class to manage individual IRC clients
 class Client:
     # Initialize the client
     def __init__(self, socket, address):
@@ -31,6 +14,7 @@ class Client:
         self.nickname = None
         self.channels = set()
         self.buffer = ""
+        self.lastPing = datetime.datetime.now()
 
     # Send a message to the client
     def send_message(self, message):
@@ -45,6 +29,8 @@ class Client:
     def leave_channel(self, channel):
         self.channels.remove(channel)
         channel.remove_client(self)
+
+# Define Client class to manage individual IRC clients
 
 # Define Server class to manage the IRC server
 class Server:
@@ -112,6 +98,7 @@ class Server:
         del self.clients[client.socket]
         client.socket.close()
         print("Client", client.address, "disconnected")
+        
     
     # Handle incoming commands from clients
     def handle_command(self, client, data):
@@ -129,6 +116,7 @@ class Server:
     def handle_cap(self, client, parts):
         print(f"[{client.address[0]}:{client.address[1]}] CAP: {parts[1]} {parts[2]}")
 
+
     # Handle NICK command
     def handle_nick(self, client, parts):
         if len(parts) < 2:
@@ -136,12 +124,22 @@ class Server:
             print(f"[{client.address[0]}:{client.address[1]}] → Error 461: Not enough parameters")
         else:
             new_nick = parts[1].strip()
-            # Check if the nickname is valid
+            # Check if the nickname is valid, changes it automatically if banned char is the first digit
             if not re.match(r'^[a-zA-Z][a-zA-Z0-9\-_]*$', new_nick):
                 client.send_message(f"432 * {new_nick} :Erroneous nickname")
                 client.send_message("NOTICE * :Nickname must start with a letter and can contain only letters, numbers, hyphens, and underscores")
+                
                 print(f"[{client.address[0]}:{client.address[1]}] → Error 432: Erroneous Nickname")
-                return
+                while True:
+                    if re.match(r'^[a-zA-Z][a-zA-Z0-9\-_]*$', new_nick):
+                        print(new_nick)
+                        break
+                    elif len(new_nick) == 0:
+                        break
+                    else:
+                        new_nick = new_nick[1:] 
+                if new_nick == None:
+                    return
 
             # Check if the nickname is already in use
             for c in self.clients.values():
@@ -190,6 +188,7 @@ class Server:
             # Notify other clients in the channel
             channel.broadcast(":" + client.nickname + "!" + client.nickname + "@" + client.address[0] + " JOIN " + channel_name)
             # Send the client the list of users in the channel
+            channel.display_clients()
             client.send_message(":IRCserver 353 " + client.nickname + " = " + channel_name + " :" + " ".join([c.nickname for c in channel.clients]))
             print(f"[{client.address[0]}:{client.address[1]}] → : 353 {client.nickname} : {channel_name}")
             time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -229,8 +228,20 @@ class Server:
         for channel in list(client.channels):
             channel.broadcast(": " + client.nickname + "!" + client.nickname + "@" + client.address[0] + " QUIT :" + quit_message)
             client.leave_channel(channel)
+            channel.display_clients()
         self.remove_client(client)
 
+    def handle_client_response(self, client, parts):
+        curTime = datetime.datetime.now()
+        time = int(curTime.timestamp()) - int(client.lastPing.timestamp())
+        if time < 60:
+            return "success"
+        else:
+            print(f"[{client.address[0]}:{client.address[1]}] No reply from user to PING, disconnecting...")
+            if client.socket.fileno() != -1:
+                #Garbage coming from inside this call
+                self.handle_quit(client, ['QUIT', ':Leaving'])
+                return "fail"
     # Handle PING command
     def handle_ping(self, client, parts):
         if len(parts) < 2:
@@ -239,7 +250,12 @@ class Server:
         else:
             client.send_message(": PONG :" + parts[1])
             print(f"[{client.address[0]}:{client.address[1]}] received PING replying with PONG {parts[1]}")
+            if self.handle_client_response(client, parts) == "fail":
+                return
+            else:
+                client.lastPing = datetime.datetime.now()
 
+    
 # Main function to start the server
 def main():
     SERVER = "::1"
