@@ -155,6 +155,7 @@ class Server:
                 self.channels[channel_name] = Channel(channel_name)
             channel = self.channels[channel_name]
             client.join_channel(channel)
+            channel.add_client(client)
             # Notify other clients in the channel
             channel.broadcast(":" + client.nickname + "!" + client.nickname + "@" + client.address[0] + " JOIN " + channel_name)
             # Send the client the list of users in the channel
@@ -173,33 +174,29 @@ class Server:
             message = " ".join(parts[2:])
             if message.startswith(":"):
                 message = message[1:]
-
-            if not message: 
-                client.send_message(":IRCserver 412 * PRIVMSG :No text to send")
-                print(f"[{client.address[0]}:{client.address[1]}] → Error 412 No text to send")
-                return
             
-            if target.startswith("#"):
-                # Message to a channel
-                if target in self.channels:
-                    self.channels[target].broadcast(":" + client.nickname + "!" + client.nickname + "@" + client.address[0] + " PRIVMSG " + target + " :" + message)
+            # Private message to a user or channel
+            target_client = None
+            for c in self.clients.values():
+                if c.nickname == target:
+                    target_client = c
+                    break
+            
+            if target in self.channels:
+                channel = self.channels[target]
+                if client in channel.clients:
+                    channel.broadcast(":" + client.nickname + "!" + client.nickname + "@" + client.address[0] + " PRIVMSG " + target + " :" + message, client)
                 else:
-                    client.send_message(":IRCserver 403 * " + target + " :No such channel")
-                    print(f"[{client.address[0]}:{client.address[1]}] → Error 403 No such channel")
-            
+                    client.send_message(":IRCserver 442 * " + target + " :You're not on that channel")
+                    print(f"[{client.address[0]}:{client.address[1]}] → Error 442 You're not on that channel")
+            elif target_client:
+                target_client.send_message(":" + client.nickname + "!" + client.nickname + "@" + client.address[0] + " PRIVMSG " + target + " :" + message)
+                print(f"[{client.address[0]}:{client.address[1]}]→ : {client.nickname} sending {message} to {target}")
             else:
-                # Private message to a user
-                target_client = None
-                for c in self.clients.values():
-                    if c.nickname == target:
-                        target_client = c
-                        break
-                if target_client:
-                    target_client.send_message(":" + client.nickname + "!" + client.nickname + "@" + client.address[0] + " PRIVMSG " + target + " :" + message)
-                    print(f"[{client.address[0]}:{client.address[1]}] → : {client.nickname} sending {message} to {target}")
-                else:
-                    client.send_message(":IRCserver 401 * " + target + " :No such nickname")
-                    print(f"[{client.address[0]}:{client.address[1]}] → Error 401 No such nickname")
+                client.send_message(":IRCserver 401 * " + target + " :No such nickname/channel")
+                print(f"[{client.address[0]}:{client.address[1]}] → Error 401 No such nickname/channel")
+
+
 
     # Handle QUIT command
     def handle_quit(self, client, parts):
