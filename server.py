@@ -39,7 +39,7 @@ class Server:
             while True:
                 try:
                     # Use select to monitor the socket 
-                    # Timeout is set to 1 second to regularly check for new clients and inactive clients
+                    # Timeout is set to 1 second to regularly check for new clients
                     readable, _, _ = select.select([self.socket] + list(self.clients.keys()), [], [], 1)
                     for sock in readable:
                         if sock == self.socket:
@@ -170,6 +170,20 @@ class Server:
         client.nickname = new_nick
         client.send_message(f":{old_nick or '*'}!{old_nick or '*'}@{client.address[0]} NICK :{new_nick}")
         print(f"[{client.address[0]}:{client.address[1]}] → Nickname changed to {new_nick}")
+            # Check if the nickname is already in use
+            for c in self.clients.values():
+                if c.nickname == new_nick:
+                    client.send_message("433 * " + new_nick + " :Nickname is already in use")
+                    print(f"[{client.address[0]}:{client.address[1]}] → Error 433: Nickname already in use")
+                    return
+                
+            # Notify other clients about the nickname change
+            if client.nickname:
+                for channel in client.channels:
+
+                    channel.broadcast(":" + client.nickname + "!" + client.nickname + "@" + client.address[0] + " NICK :" + new_nick)
+
+            client.nickname = new_nick
 
     # Handle USER command
     def handle_user(self, client, parts):
