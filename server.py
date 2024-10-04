@@ -71,7 +71,7 @@ class Server:
                 client.last_activity = datetime.datetime.now()  # Update last activity time
                 while "\r\n" in client.buffer:
                     line, client.buffer = client.buffer.split("\r\n", 1)
-                    print(f"[{client.address[0]}:{client.address[1]}] → b'{line}\r\n'")
+                    print(f"[{client.address[0]}:{client.address[1]}] → {line}\r\n'")
                     self.handle_command(client, line.strip())
         except Exception as e:
             print("Error handling client", client.address, ":", e)
