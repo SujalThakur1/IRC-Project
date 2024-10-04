@@ -1,3 +1,5 @@
+import datetime
+
 class Client:
     # Initialize the client
     def __init__(self, socket, address):
@@ -6,6 +8,9 @@ class Client:
         self.nickname = None
         self.channels = set()
         self.buffer = ""
+        self.last_activity = datetime.datetime.now()
+        self.ping_sent = False
+        self.ping_sent_time = None
 
     # Send a message to the client
     def send_message(self, message):
