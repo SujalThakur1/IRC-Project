@@ -7,7 +7,8 @@ class Channel:
         self.clients.add(client)
 
     def remove_client(self, client):
-        self.clients.remove(client)
+        if client in self.clients:
+            self.clients.remove(client)
         
     # Broadcast a message to all clients in the channel except the sender
     def broadcast(self, message, sender=None):
