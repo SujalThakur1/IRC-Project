@@ -27,5 +27,6 @@ class Client:
         channel.add_client(self)
 
     def leave_channel(self, channel):
-        self.channels.remove(channel)
-        channel.remove_client(self)
+        if channel in self.channels:
+            self.channels.remove(channel)
+            channel.remove_client(self)
