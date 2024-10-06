@@ -26,8 +26,74 @@ class Server:
             "CAP": self.handle_cap,
             "QUIT": self.handle_quit,
             "PING": self.handle_ping,
-            "PONG": self.handle_pong
+            "PONG": self.handle_pong,
+            "NAMES": self.handle_names,
+            "PART": self.handle_part,
+            "KICK": self.handle_kick,
         }
+    
+    def handle_names(self, client, parts):
+        if len(parts) < 2:
+            client.send_message("461 * NAMES :Not enough parameters")
+            print(f"[{client.address[0]}:{client.address[1]}] → Error 461: Not enough parameters")
+            return
+        
+        channel_name = parts[1]
+        if channel_name in self.channels:
+            channel = self.channels[channel_name]
+            names = " ".join([c.nickname for c in channel.clients])
+            client.send_message(f":IRCserver 353 {client.nickname} = {channel_name} :{names}")
+            client.send_message(f":IRCserver 366 {client.nickname} {channel_name} :End of /NAMES list")
+        else:
+            client.send_message(f":IRCserver 403 {client.nickname} {channel_name} :No such channel")
+
+    def handle_kick(self, client, parts):
+        if len(parts) < 3:
+            client.send_message("461 * KICK :Not enough parameters")
+            print(f"[{client.address[0]}:{client.address[1]}] → Error 461: Not enough parameters")
+            return
+        
+        channel_name = parts[1]
+        target_nick = parts[2]
+        reason = " ".join(parts[3:]) if len(parts) > 3 else "No reason given"
+        
+        if channel_name in self.channels:
+            channel = self.channels[channel_name]
+            if client in channel.clients:
+                target_client = next((c for c in channel.clients if c.nickname == target_nick), None)
+                if target_client:
+                    target_client.leave_channel(channel)
+                    channel.remove_client(target_client)
+                    channel.display_clients()
+                    channel.broadcast(f":{client.nickname}!{client.nickname}@{client.address[0]} KICK {channel_name} {target_nick} :{reason}")
+                else:
+                    client.send_message(f":IRCserver 401 {client.nickname} {target_nick} :No such nick/channel")
+            else:
+                client.send_message(f":IRCserver 442 {client.nickname} {channel_name} :You're not on that channel")
+        else:
+            client.send_message(f":IRCserver 403 {client.nickname} {channel_name} :No such channel")
+
+    def handle_part(self, client, parts):
+        if len(parts) < 2:
+            client.send_message("461 * PART :Not enough parameters")
+            print(f"[{client.address[0]}:{client.address[1]}] → Error 461: Not enough parameters")
+            return
+        
+        channel_name = parts[1]
+        reason = " ".join(parts[2:]) if len(parts) > 2 else "Leaving"
+        
+        if channel_name in self.channels:
+            channel = self.channels[channel_name]
+            if client in channel.clients:
+                channel.broadcast(f":{client.nickname}!{client.nickname}@{client.address[0]} PART {channel_name} :{reason}")
+                client.leave_channel(channel)
+                channel.remove_client(client)
+                channel.display_clients()
+            else:
+                client.send_message(f":IRCserver 442 {client.nickname} {channel_name} :You're not on that channel")
+        else:
+            client.send_message(f":IRCserver 403 {client.nickname} {channel_name} :No such channel")
+        
 
     # Start the server and listen for connections
     def start(self):
@@ -133,16 +199,7 @@ class Server:
             return
 
         original_nick = parts[1].strip()
-        new_nick = ""
-
-        # Use a loop to correct the nickname
-        for char in original_nick:
-            if not new_nick and char.isalpha():
-                new_nick += char
-            elif new_nick and (char.isalnum() or char in '_)-~^\\'):
-                new_nick += char
-            if len(new_nick) == 9:
-                break
+        new_nick = self.validate_name(original_nick)
 
         if not new_nick:
             client.send_message(f"432 * {original_nick} :Erroneous nickname")
@@ -154,13 +211,6 @@ class Server:
             client.send_message(f"NOTICE * :Your nickname was automatically changed to {new_nick}")
             print(f"[{client.address[0]}:{client.address[1]}] → Nickname automatically corrected to {new_nick}")
 
-        # Check if the nickname is already in use
-        for c in self.clients.values():
-            if c.nickname == new_nick:
-                client.send_message("433 * " + new_nick + " :Nickname is already in use")
-                print(f"[{client.address[0]}:{client.address[1]}] → Error 433: Nickname already in use")
-                return
-            
         # Notify other clients about the nickname change
         if client.nickname:
             for channel in client.channels:
@@ -170,7 +220,33 @@ class Server:
         client.nickname = new_nick
         client.send_message(f":{old_nick or '*'}!{old_nick or '*'}@{client.address[0]} NICK :{new_nick}")
         print(f"[{client.address[0]}:{client.address[1]}] → Nickname changed to {new_nick}")
-           
+
+    def validate_name(self, original_nick):
+        new_nick = ""
+        # Use a loop to correct the nickname
+        for char in original_nick:
+            if not new_nick and char.isalpha():
+                new_nick += char
+            elif new_nick and (char.isalnum() or char in '_)-~^\\'):
+                new_nick += char
+            if len(new_nick) == 9:
+                break
+
+        if not new_nick:
+            return None
+
+        # Check if the nickname is already in use and add '-' if necessary
+        while self.is_nickname_in_use(new_nick):
+            if len(new_nick) == 9:
+                return None  # Cannot add '-', nickname is already at max length
+            new_nick += '-'
+            if len(new_nick) > 9:
+                new_nick = new_nick[:9]
+
+        return new_nick
+
+    def is_nickname_in_use(self, nickname):
+        return any(c.nickname == nickname for c in self.clients.values())
     # Handle USER command
     def handle_user(self, client, parts):
         if len(parts) < 5:
@@ -207,8 +283,8 @@ class Server:
             channel.broadcast(":" + client.nickname + "!" + client.nickname + "@" + client.address[0] + " JOIN " + channel_name)
             # Send the client the list of users in the channel
             channel.display_clients()
-            client.send_message(":IRCserver 353 " + client.nickname + " = " + channel_name + " :" + " ".join([c.nickname for c in channel.clients]))
             print(f"[{client.address[0]}:{client.address[1]}] → : 353 {client.nickname} : {channel_name}")
+            self.handle_names(client, ["NAMES", channel_name])
             time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             self.handle_log("connected", client.nickname, time, client)
 
