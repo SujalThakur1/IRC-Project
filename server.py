@@ -7,7 +7,7 @@ import time
 from channel import Channel
 from client import Client
 
-# Define Server class to manage the IRC server
+# Define Server class to manage the IRC server      
 class Server:
     # Initialize the server
     def __init__(self, host, port):
@@ -22,7 +22,7 @@ class Server:
             "NICK": self.handle_nick,
             "USER": self.handle_user,
             "JOIN": self.handle_join,
-            "PRIVMSG": self.handle_privmsg,
+            "PRIVMSG": self.handle_privmsg, 
             "CAP": self.handle_cap,
             "QUIT": self.handle_quit,
             "PING": self.handle_ping,
@@ -55,12 +55,19 @@ class Server:
         
         channel_name = parts[1]
         target_nick = parts[2]
-        reason = " ".join(parts[3:]) if len(parts) > 3 else "No reason given"
+        if len(parts) > 3:
+            reason = " ".join(parts[3:])
+        else:
+            reason = "No reason given"
         
         if channel_name in self.channels:
             channel = self.channels[channel_name]
             if client in channel.clients:
-                target_client = next((c for c in channel.clients if c.nickname == target_nick), None)
+                target_client = None
+                for c in channel.clients:
+                    if c.nickname == target_nick:
+                        target_client = c
+                        break
                 if target_client:
                     target_client.leave_channel(channel)
                     channel.remove_client(target_client)
@@ -80,7 +87,10 @@ class Server:
             return
         
         channel_name = parts[1]
-        reason = " ".join(parts[2:]) if len(parts) > 2 else "Leaving"
+        if len(parts) > 2:
+            reason = " ".join(parts[2:]) 
+        else:
+            reason = "Leaving"
         
         if channel_name in self.channels:
             channel = self.channels[channel_name]
@@ -142,17 +152,17 @@ class Server:
         except Exception as e:
             print("Error handling client", client.address, ":", e)
             self.remove_client(client)
-
     # Check for inactive clients
     def check_inactive_clients(self):
         current_time = datetime.datetime.now()
         for client in list(self.clients.values()):
             time_difference = (current_time - client.last_activity).total_seconds()
             if time_difference > 60:
-                if not client.ping_sent:
+                if client.ping_sent:
+                    if (current_time - client.ping_sent_time).total_seconds() > 60:
+                        self.handle_quit(client, ["QUIT", ":Ping timeout"])
+                else:
                     self.send_ping(client)
-                elif (current_time - client.ping_sent_time).total_seconds() > 60:
-                    self.handle_quit(client, ["QUIT", ":Ping timeout"])
 
     # Send PING to client
     def send_ping(self, client):
