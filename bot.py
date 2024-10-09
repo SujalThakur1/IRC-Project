@@ -99,21 +99,26 @@ class Roulette:
         winnings = 0
         
         # Determine if the bet is a winning bet
-        if bet in ['red', 'black'] and bet == color:
-            win = True
-            winnings = amount * 2
-        elif bet in ['odd', 'even'] and ((bet == 'odd' and is_result_odd) or (bet == 'even' and not is_result_odd)):
-            win = True
-            winnings = amount * 2
-        elif bet in ['1-12', '13-24', '25-36'] and bet == dozen:
-            win = True
-            winnings = amount * 3
-        elif bet in ['1-18', '19-36'] and bet == number_range:
-            win = True
-            winnings = amount * 2
-        elif bet.isdigit() and int(bet) == result:
-            win = True
-            winnings = amount * 36
+        if bet in ['red', 'black']:
+            if bet == color:
+                win = True
+                winnings = amount * 2
+        elif bet in ['odd', 'even']:
+            if (bet == 'odd' and is_result_odd) or (bet == 'even' and not is_result_odd):
+                win = True
+                winnings = amount * 2
+        elif bet in ['1-12', '13-24', '25-36']:
+            if bet == dozen:
+                win = True
+                winnings = amount * 3
+        elif bet in ['1-18', '19-36']:
+            if bet == number_range:
+                win = True
+                winnings = amount * 2
+        elif bet.isdigit():
+            if int(bet) == result:
+                win = True
+                winnings = amount * 36
         
         return result, color, win, winnings
 
