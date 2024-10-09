@@ -70,9 +70,9 @@ class Server:
                         break
                 if target_client:
                     target_client.leave_channel(channel)
+                    channel.broadcast(f":{client.nickname}!{client.nickname}@{client.address[0]} KICK {channel_name} {target_nick} :{reason}")
                     channel.remove_client(target_client)
                     channel.display_clients()
-                    channel.broadcast(f":{client.nickname}!{client.nickname}@{client.address[0]} KICK {channel_name} {target_nick} :{reason}")
                 else:
                     client.send_message(f":IRCserver 401 {client.nickname} {target_nick} :No such nick/channel")
             else:
