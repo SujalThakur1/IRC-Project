@@ -18,14 +18,17 @@ class Users:
         self.users = {}
 
     def add_user(self, username):
+        # Add a new user if they don't already exist
         if username not in self.users:
             self.users[username] = User(username)
 
     def remove_user(self, username):
+        # Remove a user if they exist
         if username in self.users:
             del self.users[username]
 
     def update_user(self, username, balance=None, slap_count=None, slapped=None):
+        # Update user attributes if they exist
         if username in self.users:
             if balance is not None:
                 self.users[username].balance = balance
@@ -35,12 +38,15 @@ class Users:
                 self.users[username].slapped = slapped
 
     def get_user(self, username):
+        # Retrieve a user object
         return self.users.get(username)
 
     def get_all_users(self):
+        # Get a set of all usernames
         return set(self.users.keys())
 
     def change_username(self, old_username, new_username):
+        # Change a user's username
         if old_username in self.users:
             user = self.users[old_username]
             user.username = new_username
@@ -48,17 +54,21 @@ class Users:
             del self.users[old_username]
 
     def get_leaderboard(self):
+        # Return users sorted by balance in descending order
         return sorted(self.users.values(), key=lambda x: x.balance, reverse=True)
 
 class Roulette:
     def __init__(self):
+        # Initialize roulette numbers and colors
         self.numbers = list(range(37))
         self.colors = ['green'] + ['red', 'black'] * 18
 
     def is_odd(self, n):
+        # Check if a number is odd
         return n % 2 != 0
 
     def get_dozen(self, n):
+        # Determine which dozen the number falls into
         if 1 <= n <= 12:
             return "1-12"
         elif 13 <= n <= 24:
@@ -69,6 +79,7 @@ class Roulette:
             return None
 
     def get_range(self, n):
+        # Determine which range the number falls into
         if 1 <= n <= 18:
             return "1-18"
         elif 19 <= n <= 36:
@@ -77,6 +88,7 @@ class Roulette:
             return None
 
     def play(self, amount, bet):
+        # Simulate a roulette spin
         result = random.choice(self.numbers)
         color = self.colors[result]
         is_result_odd = self.is_odd(result)
@@ -86,31 +98,28 @@ class Roulette:
         win = False
         winnings = 0
         
-        if bet in ['red', 'black']:
-            if bet == color:
-                win = True
-                winnings = amount * 2
-        elif bet in ['odd', 'even']:
-            if (bet == 'odd' and is_result_odd) or (bet == 'even' and not is_result_odd):
-                win = True
-                winnings = amount * 2
-        elif bet in ['1-12', '13-24', '25-36']:
-            if bet == dozen:
-                win = True
-                winnings = amount * 3
-        elif bet in ['1-18', '19-36']:
-            if bet == number_range:
-                win = True
-                winnings = amount * 2
-        elif bet.isdigit():
-            if int(bet) == result:
-                win = True
-                winnings = amount * 36
+        # Determine if the bet is a winning bet
+        if bet in ['red', 'black'] and bet == color:
+            win = True
+            winnings = amount * 2
+        elif bet in ['odd', 'even'] and ((bet == 'odd' and is_result_odd) or (bet == 'even' and not is_result_odd)):
+            win = True
+            winnings = amount * 2
+        elif bet in ['1-12', '13-24', '25-36'] and bet == dozen:
+            win = True
+            winnings = amount * 3
+        elif bet in ['1-18', '19-36'] and bet == number_range:
+            win = True
+            winnings = amount * 2
+        elif bet.isdigit() and int(bet) == result:
+            win = True
+            winnings = amount * 36
         
         return result, color, win, winnings
 
 class Bot:
     def __init__(self, host, port, channel, nick):
+        # Initialize bot with connection details
         self.irc = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
         self.users = Users()
         self.roulette = Roulette()
@@ -120,32 +129,33 @@ class Bot:
         self.nick = nick
         self.running = True
 
-    # Function to print sent/received data for debugging
     def print_data(self, direction, data):
+        # Print data for debugging
         print(f"{direction}: {data}")
 
-    # Function to send data to the IRC server
     def send_data(self, data):
+        # Send data to the IRC server
         self.print_data("SENT", data)
         self.irc.send(data.encode())
 
-    # Function to receive data from the IRC server
     def receive_data(self):
+        # Receive data from the IRC server
         data = self.irc.recv(2048).decode("utf-8", errors="ignore").strip("\r\n")
         self.print_data("RECEIVED", data)
         return data
 
-    # Function that gets fun facts from an api
     def getFunFacts(self):
+        # Get a random fun fact
         return random.choice(self.turnFunFactFileIntoList())
 
     def turnFunFactFileIntoList(self):
+        # Read fun facts from a file
         with open('./funfacts.txt') as f:
             lines = f.read().splitlines()
         return lines
 
-    # Function to display available bot commands
     def show_commands(self):
+        # Display available bot commands
         cmds = [
             "Commands:",
             "!hello - Say hello",
@@ -158,54 +168,47 @@ class Bot:
         ]
         return "\n".join(cmds)
 
-    # Function to get a user's balance
     def get_bal(self, username):
+        # Get a user's balance
         user = self.users.get_user(username)
         return user.balance if user else 0
 
-    # Function to update a user's balance
     def update_bal(self, username, amount):
+        # Update a user's balance
         user = self.users.get_user(username)
         if user:
             self.users.update_user(username, balance=user.balance + amount)
 
-    # Function to handle PING messages from the server
     def handle_ping(self, resp):
+        # Respond to server PING messages
         self.send_data(f"PONG {resp.split()[1]}\r\n")
 
-    # Function to process the user list received from the server
     def process_user_list(self, line):
-        # Parse the user list
+        # Process the user list from the server
         user_list = line.split(':')[-1].strip().split()
         for username in user_list:
             self.users.add_user(username)
 
-    # Function to handle a user joining the channel
     def handle_user_join(self, line):
-        # Get the user that joined
+        # Handle a user joining the channel
         username = line.split('!')[0][1:]
         self.users.add_user(username)
-        # Request updated user list
         self.send_data(f"NAMES {self.channel}\r\n")
 
-    # Function to handle a user leaving the channel
     def handle_user_leave(self, line):
-        # Get the user that left
+        # Handle a user leaving the channel
         username = line.split('!')[0][1:]
         self.users.remove_user(username)
 
-    # Function to handle a user changing their nickname
     def handle_nick_change(self, line):
-        # Get the old and new usernames
+        # Handle a user changing their nickname
         old_username = line.split('!')[0][1:]
         new_username = line.split(':')[-1].strip()
         self.users.change_username(old_username, new_username)
 
-    # Function to process private messages
     def proccess_privmsg(self, resp):
-        # Parse the message
+        # Process private messages
         parts = resp.split(' ', 3)
-        # Get the user, target, and message
         username = parts[0].split('!')[0][1:]
         target = parts[2]
         msg = parts[3][1:]
@@ -231,8 +234,8 @@ class Bot:
                     self.send_data(f"PRIVMSG {self.channel} :{cmd}\r\n")
         return False
 
-    # Function to handle the slap command
     def handle_slap(self, username, msg):
+        # Handle the slap command
         parts = msg.split()
         if len(parts) == 2:
             victim = parts[1]
@@ -268,8 +271,8 @@ class Bot:
                 self.send_data(f"PRIVMSG {self.channel} :No one to slap :(\r\n")
         return False  # Continue normal operation
 
-    # Function to handle the roulette command
     def handle_roulette(self, username, msg):
+        # Handle the roulette command
         parts = msg.split()
         if len(parts) == 3:
             amt_str = parts[1]
@@ -302,17 +305,16 @@ class Bot:
             self.send_data(f"PRIVMSG {self.channel} :Wrong format. Use: !roulette <amount> <bet>\r\n")
             self.send_data(f"PRIVMSG {self.channel} :Bets: red/black, odd/even, 1-12/13-24/25-36, 1-18/19-36, or 0-36\r\n")
 
-     # Function to handle the work command
     def handle_work(self, username):
-        # Pay the user for working
+        # Handle the work command
         pay = random.randint(100, 900)
         self.update_bal(username, pay)
         new_bal = self.get_bal(username)
         self.send_data(f"PRIVMSG {self.channel} :{username}, worked hard and got ${pay}!\r\n")
         self.send_data(f"PRIVMSG {self.channel} :{username}, Your balance: ${new_bal}.\r\n")
 
-    # Function to handle the balance check command
     def handle_bal(self, username, msg):
+        # Handle the balance check command
         parts = msg.split()
         if len(parts) == 1:
             bal = self.get_bal(username)
@@ -325,8 +327,8 @@ class Bot:
         else:
             self.send_data(f"PRIVMSG {self.channel} :Invalid command. Use !bal or !bal -lb\r\n")
 
-    # Function to handle nickname errors and ask for a new one
     def handle_nick_error(self):
+        # Handle nickname errors and ask for a new one
         while True:
             new_nick = input("Nickname is already in use. Please enter a new nickname for bot: ")
             self.send_data(f"NICK {new_nick}\r\n")
@@ -341,8 +343,8 @@ class Bot:
                     self.nick = new_nick
                     return
     
-     # Main function to run the IRC bot
     def run(self):
+        # Main function to run the IRC bot
         try:
             # Connect to the IRC server
             self.irc.connect((self.host, self.port))
@@ -402,10 +404,8 @@ class Bot:
             self.irc.close()  # Ensuring the socket is closed when exiting
             print("Connection closed.")
 
-
-
-
 def parse_arguments():
+    # Parse command-line arguments
     parser = argparse.ArgumentParser(description="IRC Bot")
     parser.add_argument("--host", default="::", help="Server to connect to")
     parser.add_argument("--port", type=int, default=6667, help="Port to connect to")
@@ -414,6 +414,7 @@ def parse_arguments():
     return parser.parse_args()
 
 def main():
+    # Main entry point for the bot
     args = parse_arguments()
     bot = Bot(args.host, args.port, args.channel, args.name)
     bot.run()
